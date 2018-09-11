@@ -76,19 +76,33 @@ dat <- dat %>%
   mutate(chan=substring(chan,2)) %>%
   left_join(channel_locations)
 
-#' Item number is missing here. Items aren't the same as trials -- the same
-#' items can be presented in different orders, and it's not clear if trlnumber
-#' here refers to the sequence number or the particular lexical item. Items
-#' should definitely be included in the random effects the same way subjects
-#' are. Although given the number of controls implemented in the covariates, you
-#' should be able to get away with (1|item) instead of (1+condition|item).
+#' Item number is labeled `trlnumber` here. Items aren't the same as trials --
+#' the same items can be presented in different orders, and it's not clear if
+#' trlnumber here refers to the sequence number or the particular lexical item.
+#' Items should definitely be included in the random effects the same way
+#' subjects are. Although given the number of controls implemented in the
+#' covariates, you should be able to get away with (1|item) instead of
+#' (1+condition|item).
+
+
+#' We also scaled the covariates. This helps the numerical aspects and also
+#' makes it easier to compare the relative weighting of the covariates.
+dat.scaled <- dat %>%
+              mutate_at(vars(cloze:plaus_eval), scale)
 
 m <- lmer(N4 ~ BS + condition * x * y *
                   (cloze  + wordfrq + phon_nd + pt_semdist + sentt_semdist + concreteness + rhyme_eval + plaus_eval) +
-              (1 + condition | subject_id),
-          data=dat)
+              (1 + condition | subject_id) +
+              (1 | trlnumber),
+          data=dat.scaled,
+          control=lmerControl(optimizer="nloptwrap",optCtrl=list(maxeval=1e6)),
+          REML=TRUE)
+# for some reason, this model doesn't converge well in ML, but does in REML,
+# so we fit in REML and then refit in ML, which uses the REML starting values
+# and thus gets a good start
+m <- refitML(m)
 
-summary(m)
+print(summary(m),correlation=TRUE,symbolic.cor=TRUE)
 
 Anova(m)
 
