@@ -1,3 +1,6 @@
 language.csv
 music.csv
 .Rproj.user
+.RData
+.Rhistory
+*.html
