@@ -91,16 +91,12 @@ dat.scaled <- dat %>%
               mutate_at(vars(cloze:plaus_eval), scale)
 
 m <- lmer(N4 ~ BS + condition * x * y *
-                  (cloze  + wordfrq + phon_nd + pt_semdist + sentt_semdist + concreteness + rhyme_eval + plaus_eval) +
-              (1 + condition | subject_id) +
-              (1 | trlnumber),
+            (cloze  + wordfrq + phon_nd + pt_semdist + sentt_semdist + concreteness + rhyme_eval + plaus_eval) +
+            (1 + condition | subject_id) +
+            (1 | trlnumber),
           data=dat.scaled,
-          control=lmerControl(optimizer="nloptwrap",optCtrl=list(maxeval=1e6)),
-          REML=TRUE)
-# for some reason, this model doesn't converge well in ML, but does in REML,
-# so we fit in REML and then refit in ML, which uses the REML starting values
-# and thus gets a good start
-m <- refitML(m)
+          control=lmerControl(optimizer="bobyqa",optCtrl=list(maxfun=1e6)),
+          REML=FALSE)
 
 print(summary(m),correlation=TRUE,symbolic.cor=TRUE)
 
