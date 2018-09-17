@@ -18,6 +18,7 @@ library("tidyverse")  # for plotting and data manipulation
 library("lme4")
 library("car")
 library("effects")
+library("lattice")
 options(contrasts = c("contr.Sum","contr.Poly"))
 
 #' columns in this data file
@@ -90,6 +91,7 @@ dat <- dat %>%
 dat.scaled <- dat %>%
               mutate_at(vars(cloze:plaus_eval), scale)
 
+#+ model, cache=TRUE
 m <- lmer(N4 ~ BS + condition * x * y *
             (cloze  + wordfrq + phon_nd + pt_semdist + sentt_semdist + concreteness + rhyme_eval + plaus_eval) +
             (1 + condition | subject_id) +
@@ -97,10 +99,31 @@ m <- lmer(N4 ~ BS + condition * x * y *
           data=dat.scaled,
           control=lmerControl(optimizer="bobyqa",optCtrl=list(maxfun=1e6)),
           REML=FALSE)
-
+#+ output
 print(summary(m),correlation=TRUE,symbolic.cor=TRUE)
 
+plot(m)
+
+qqmath(m)
+
 Anova(m)
+
+#' The above summary can also be expressed graphically.
+
+# Wald is the fastest method; boot the most accurate and slowest, profile is a
+# the middle road
+ci <- confint(m,method="Wald")
+ci %>%
+  as_tibble(rownames = "coef") %>%
+  filter(substr(coef,1,4) != ".sig") %>% # omit random effects
+  mutate(est = fixef(m),
+         coef = factor(coef, levels=rev(names(fixef(m))))) %>%
+  ggplot(aes(x=coef,y=est,ymin=`2.5 %`, ymax=`97.5 %`)) +
+  geom_pointrange(fatten=1.5) +
+  geom_hline(yintercept=0, linetype="dashed") +
+  labs(x="Coefficient",y="Estimate (µV)") +
+  coord_flip() +
+  theme_light()
 
 #' For now, I'm leaving out ways of plotting the statistical model, but that's
 #' something we can add later. Including potentially ways to plot the
