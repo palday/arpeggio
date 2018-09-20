@@ -91,10 +91,7 @@ dat <- dat %>%
 #' subjects are. Although given the number of controls implemented in the
 #' covariates, you should be able to get away with (1|item) instead of
 #' (1+condition|item).
-
-
-
-
+#'
 #' We also scaled the covariates. This helps the numerical aspects and also
 #' makes it easier to compare the relative weighting of the covariates.
 dat <- dat %>%
@@ -138,12 +135,7 @@ dat %>% group_by(condition) %>%
 #' This is why there's a huge literature on how important item-level random
 #' effects are in language research!
 
-
-# so that I don't have to remember the different options different optimizers have...
-bobyqa <- lmerControl(optimizer="bobyqa",optCtrl=list(maxfun=1e6))
-nlopt <- lmerControl(optimizer="nloptwrap",optCtrl=list(maxeval=1e6))
-
-#' I've also added in the third topographically predictor (z). This is a great
+#' I've also added in the third topographical predictor (z). This is a great
 #' example of issues in model fitting -- the simpler model without z didn't
 #' coverge, but the more complex one did.
 #'
@@ -163,6 +155,11 @@ nlopt <- lmerControl(optimizer="nloptwrap",optCtrl=list(maxeval=1e6))
 #' extra boost in fit, I was able to add in a by-condition slope for item.
 
 
+# so that I don't have to remember the different options different optimizers have...
+bobyqa <- lmerControl(optimizer="bobyqa",optCtrl=list(maxfun=1e6))
+nlopt <- lmerControl(optimizer="nloptwrap",optCtrl=list(maxeval=1e6))
+
+
 #+ model, cache=TRUE
 system.time(m <- lmer(scale(N4) ~ scale(BS) * condition * x * y * z +
                               condition * (wordfrq + phon_nd + pt_semdist + concreteness + plaus_eval) +
@@ -172,7 +169,12 @@ system.time(m <- lmer(scale(N4) ~ scale(BS) * condition * x * y * z +
           control=bobyqa,
           REML=FALSE))
 
-#+ output
+#' If you don't understand some of the plots here, don't worry. The diagnostics
+#' look fine overall. It looks like our residual distribution is heavy tailed
+#' and more t than normal, but there's nothing to be done for that now and it
+#' doesn't actually impace the inferences we really care about that much.
+
+#+ output, cache=TRUE
 print(summary(m),correlation=FALSE,symbolic.cor=TRUE)
 
 sprintf("Number of fixed-effect correlations > 0.1: %d",sum(as.matrix(vcov(m)) > 0.1))
@@ -181,6 +183,24 @@ plot(m)
 
 qqmath(m)
 
+qqmath(ranef(m,condVar=TRUE))
+
+dotplot(ranef(m,condVar=TRUE))
+
+#+ diagnostics, cache=TRUE, fig.width=10, fig.height=10
+fortify.merMod(m, drop_na(dat)) %>%
+  ggplot(aes(.fitted,.resid)) +
+    geom_point(aes(color=condition),alpha=0.3) +
+    facet_wrap( ~ subject_id) +
+    geom_hline(yintercept=0) +
+    theme_light() +
+    labs(title="Residuals vs. Fitted",
+         subtitle="Should be cloud shaped",
+         x="Fitted",
+         y="Residuals")
+
+
+#+ anova, cache = TRUE
 (a <- Anova(m))
 
 #' For the ANOVA-style display, we can also omit the baseline interval because
@@ -188,14 +208,13 @@ qqmath(m)
 
 a[!str_detect(rownames(a),"BS"),]
 
-
 #' The above summary can also be expressed graphically.
 
 # Wald is the fastest method; boot the most accurate and slowest, profile is a
 # the middle road
 ci <- confint(m,method="Wald")
 
-#+ coefplot, cache=TRUE, fig.width=7, fig.height=13
+#+ coefplot, cache=TRUE, fig.width=7, fig.height=5
 ci.gg <- ci %>%
   as_tibble(rownames = "coef") %>%
   dplyr::filter(substr(coef,1,4) != ".sig") %>% # omit random effects
@@ -218,14 +237,75 @@ gg %+% subset(ci.gg, !topo) + ggtitle("Global Effects")
 gg %+% subset(ci.gg, as.logical(str_detect(coef,"x"))) + ggtitle("Lateral Effects")
 gg %+% subset(ci.gg, as.logical(str_detect(coef,"y"))) + ggtitle("Saggital Effects")
 
+#' For functions that applied within the model formula, we can often pull out
+#' aspects of their computation. This is useful for undoing scaling, which we will use below.
+unscale_params <- function(model, term){
+list(center=attr(model@frame[[sprintf("scale(%s)",term)]],"scaled:center"),
+     scale=attr(model@frame[[sprintf("scale(%s)",term)]],"scaled:scale"))
+}
+
 #' With effects plots by quadrant
 #+ effects, cache=TRUE
-system.time(e <- allEffects(m, KR=FALSE))
+system.time(e <- allEffects(m, KR=FALSE, xlevels=7))
 
-#+ effects-plot, cache=TRUE, fig.width=7, fig.height=13
+#' we're limited in how much we can adapt the default plots without a lot of effort
+#' so we just convert to a dataframe and use our old friend ggplot2
 
 # skip the final x-y stuff
-plot(e[1:5],rug=FALSE,multiline=TRUE,ci.style="band")
+#plot(e[1:5],rug=FALSE,multiline=TRUE,ci.style="band")
+
+#+ effects-plot, cache=TRUE, fig.width=10, fig.height=3
+# convert the list of effects to list of dataframes
+edf <- lapply(e[1:5],as.data.frame)
+# add in a column for each dataframe containing the name of the effect
+edf <- Map(cbind, edf, effect = names(edf))
+# combine and plot
+# we can ignore the warning about converstion to character for factors
+edf %>% bind_rows() %>% as_tibble() %>%
+  # get into long format so that we can treat each covariate as a facet/panel
+  gather(key="covariate",value="val",
+         -effect, -condition, -fit, -se, -lower, -upper) %>%
+  ggplot(aes(x=val,y=fit,ymin=lower,ymax=upper,color=condition,fill=condition)) +
+  geom_line() +
+  # we don't want the out edges of the ribbons marked
+  geom_ribbon(color=NA,alpha=0.3) +
+  # free_x because the standardized effects are still on different scales
+  facet_grid( ~ effect,
+              scales="free_x",
+              labeller=labeller(effect=function(x) {sub("condition:","",x,fixed=TRUE)})) +
+  theme_light() +
+  scale_y_reverse() + # plot negativity upward (not unusual in ERP)
+                      # but also "up" is now a bigger N400 effect
+  labs(x="Standardized Units",
+       y="Amplitude (standard deviations, inverse scale)",
+       title="Effects as modelled",
+       subtitle="with 95% confidence interval") -> g.eff.scaled
+print(g.eff.scaled)
+
+shift <- unscale_params(m,"N4")$center
+stretch <- unscale_params(m,"N4")$scale
+unscale <- function(x) (x * stretch) + shift
+
+g.eff.scaled +
+  aes(y=unscale(fit),ymin=unscale(lower),ymax=unscale(upper)) +
+  labs(y="Amplitude (µV, inverse scale)")
+
+#' Overall, this looks good. We see that the different covariates have some
+#' moderating influence on the effect of condition, but none really change the
+#' overall structure, as the lines are largely parallel-ish and the overall
+#' (vertical) order of the effects doesn't change  (within the uncertainty given by the
+#' confidence intervals)
+
+#' Note wordfrq looks to have different scale, even on the standardized scale.
+#' This because of a long right tail: you have a few very high frequency
+#' words, while the majority are all about the same frequency.
+
+plot(density(dat$wordfrq),main="Distribution of Word Frequencies")
+
+#' (NB for this plot:  Standardization doesn't impact the overall shape of the
+#' density plot -- it translates it (slides it along the x-axis) and can squish
+#' or stretch out the absolute values on the x-axis, but doesn't impact the
+#' relative values.)
 
 # e.con <- as.data.frame(e[["condition:x:y:z:concreteness"]])
 # e.con %>% group_by(condition,concreteness,x,y) %>%
