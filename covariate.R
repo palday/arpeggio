@@ -26,6 +26,8 @@ library("car")
 library("effects")
 library("caret")
 library("lattice")
+library("R.matlab")
+library("eegUtils") # from https://github.com/craddm/eegUtils/
 options(contrasts = c("contr.Sum","contr.Poly"))
 
 #' columns in this data file
@@ -58,8 +60,15 @@ dat <- read_csv("mlm_inputFM_prepro.csv") %>%
          # you can insert more meaningful labels for the conditions here
          condition = factor(condition, levels=c(1,2,3), labels=c("A","B","C")))
 
-#' Load and convert channel coordinates from spherical to cartesian.
-#' see https://sccn.ucsd.edu/pipermail/eeglablist/2006/001655.html for formula
+#' Load and convert channel coordinates from spherical to cartesian. For
+#' formulae, see:
+#'
+#' - [1] https://sccn.ucsd.edu/pipermail/eeglablist/2006/001655.html - [2]
+#' https://github.com/mne-tools/mne-python/blob/master/mne/transforms.py#L694-L703
+#'
+#' At some point, I acquired this coordinates file -- I think I got it from
+#' EasyCap, the manufacturer.
+
 channel_locations <- read.table("64Ch_actiCAP_Equidistant10_polar.txt",header=TRUE,sep="\t")
 
 #' In Cartesian coordinates, (0,0,0) is the center of the skull and (0,0,1) is
@@ -67,16 +76,32 @@ channel_locations <- read.table("64Ch_actiCAP_Equidistant10_polar.txt",header=TR
 #' positive x are right lateral. Positive y is anterior, negative y is
 #' posterior.
 
-polar2cart <- function(phi,theta, r=1){
+d2r <- function(x) x * pi / 180
+polar2cart <- function(theta, phi, r=1, degrees=TRUE){
+  if(degrees){
+    phi <- d2r(phi)
+    theta <- d2r(theta)
+  }
   list(x = r * sin(phi) * cos(theta),
        y = r * sin(phi) * sin(theta),
        z = r * cos(phi))
 }
 
 channel_locations <- channel_locations %>%
-  do(as.data.frame(polar2cart(.$phi,.$theta))) %>%
+  as_tibble() %>%
+  do(as.data.frame(polar2cart(.$theta,.$phi))) %>%
   bind_cols(channel_locations) %>%
   mutate(chan = as.character(chan))
+
+#' For display purposes, we also need the projection into the 2D plane. I tried
+#' to figure out the formulae for this and always messed it up, so we'll just
+#' "steal" [the data from
+#' FieldTrip](https://github.com/fieldtrip/fieldtrip/blob/master/template/layout/mpi_customized_acticap64.mat).
+pos <- readMat("mpi_customized_acticap64.mat")$lay[,,1]$pos
+channel_plot_locations <- data.frame(x=pos[,1],y=pos[,2])[1:60,] %>%
+  as_tibble() %>%
+  mutate(electrode=as.character(1:60))
+
 
 #' Now add in topographical information to our original data
 dat <- dat %>%
@@ -237,6 +262,110 @@ gg %+% subset(ci.gg, !topo) + ggtitle("Global Effects")
 gg %+% subset(ci.gg, as.logical(str_detect(coef,"x"))) + ggtitle("Lateral Effects")
 gg %+% subset(ci.gg, as.logical(str_detect(coef,"y"))) + ggtitle("Saggital Effects")
 
+
+#' We use [`eegUtils``](https://github.com/craddm/eegUtils/) for the topoplot.
+#' If you have `devtools`` installed, then install using
+#' `devtools::install_github(craddm/eegUtils)`.
+#'
+#' First, we do the equivalent of grand-average plots in the critical time
+#' window.
+
+#+ topo-plots
+dat.plot <- drop_na(dat) %>% mutate(fitted=fitted(m)) %>% as_tibble()
+dat.plot <- dat.plot %>%
+  group_by(chan, condition, subject_id) %>%
+  summarize(amplitude=mean(N4-BS,na.rm=TRUE)) %>%
+  group_by(chan, condition) %>%
+  summarize(amplitude=mean(amplitude)) %>%
+  ungroup() %>%
+  rename(electrode=chan) %>%
+  left_join(channel_plot_locations) %>%
+  drop_na() %>%
+  # center
+  mutate(x = x-mean(x),
+         y = y-mean(y)) %>%
+  # scale
+  mutate(x = 0.5 * x/max(abs(x)),
+         y = 0.5 * y/max(abs(y)))
+
+dat.plot %>% subset(condition == "A") %>% topoplot(chan_marker="name")
+
+dat.plot %>% subset(condition == "B") %>% topoplot()
+
+dat.plot %>% subset(condition == "C") %>% topoplot()
+
+#' We can also do difference waves:
+
+dat.plot %>% spread(condition,amplitude) %>%
+  select(-B) %>% mutate(amplitude = A - C) %>%
+  topoplot()
+
+#' We can check that out model make the right predictions. We skip the baseline
+#' correction so that we avoid some scaling issues. It's all about the
+#' comparison anyway, but this will make this new plot look a bit different than
+#' the previous ones.
+
+drop_na(dat) %>% mutate(N4 = scale(N4)) %>%
+  group_by(chan, condition, subject_id) %>%
+  summarize(amplitude=mean(N4,na.rm=TRUE)) %>%
+  group_by(chan, condition) %>%
+  summarize(amplitude=mean(amplitude)) %>%
+  ungroup() %>%
+  rename(electrode=chan) %>%
+  left_join(channel_plot_locations) %>%
+  drop_na() %>%
+  mutate(x = x-mean(x),
+         y = y-mean(y)) %>%
+  mutate(x = 0.5 * x/max(abs(x)),
+         y = 0.5 * y/max(abs(y))) %>%
+  subset(condition == "A") %>%
+  topoplot(method="gam")+ ggtitle("Condition A: Observed Values")
+
+drop_na(dat) %>% mutate(fitted=fitted(m)) %>%
+  group_by(chan, condition, subject_id) %>%
+  summarize(amplitude=mean(fitted,na.rm=TRUE)) %>%
+  group_by(chan, condition) %>%
+  summarize(amplitude=mean(amplitude)) %>%
+  ungroup() %>%
+  rename(electrode=chan) %>%
+  left_join(channel_plot_locations) %>%
+  drop_na() %>%
+  mutate(x = x-mean(x),
+         y = y-mean(y)) %>%
+  mutate(x = 0.5 * x/max(abs(x)),
+         y = 0.5 * y/max(abs(y))) %>%
+  subset(condition == "A") %>%
+  topoplot(method="gam") + ggtitle("Condition A: Fitted Values")
+
+drop_na(dat) %>% mutate(residuals=residuals(m)) %>%
+  group_by(chan, condition, subject_id) %>%
+  summarize(amplitude=mean(residuals,na.rm=TRUE)) %>%
+  group_by(chan, condition) %>%
+  summarize(amplitude=mean(amplitude)) %>%
+  ungroup() %>%
+  rename(electrode=chan) %>%
+  left_join(channel_plot_locations) %>%
+  drop_na() %>%
+  mutate(x = x-mean(x),
+         y = y-mean(y)) %>%
+  mutate(x = 0.5 * x/max(abs(x)),
+         y = 0.5 * y/max(abs(y))) %>%
+  subset(condition == "A") %>%
+  topoplot(method="gam") + ggtitle("Condition A: Residual Values")
+
+#' Hmmm, the topographical fits aren't perfect, but they're okay. Remember that
+#' all of this is on the standard deviation / unit scale and not the original
+#' scale.
+
+#    spread(condition,amplitude) %>%
+#    select(-B) %>%
+#    mutate(amplitude = A - C) %>%
+#    topoplot()
+
+#' We could achieve something similar using the `eegkit` package and this command:
+#' `eegspace(dat.plot[,c("x","y")]*20,dat.plot$amplitude)`.
+
+
 #' For functions that applied within the model formula, we can often pull out
 #' aspects of their computation. This is useful for undoing scaling, which we will use below.
 unscale_params <- function(model, term){
@@ -244,12 +373,14 @@ list(center=attr(model@frame[[sprintf("scale(%s)",term)]],"scaled:center"),
      scale=attr(model@frame[[sprintf("scale(%s)",term)]],"scaled:scale"))
 }
 
-#' With effects plots by quadrant
+
 #+ effects, cache=TRUE
 system.time(e <- allEffects(m, KR=FALSE, xlevels=7))
 
-#' we're limited in how much we can adapt the default plots without a lot of effort
-#' so we just convert to a dataframe and use our old friend ggplot2
+#' We're limited in how much we can adapt the default plots without a lot of
+#' effort so we just convert to a dataframe and use our old friend ggplot2. For
+#' the covariates, we don't have to worry about topography, because they don't
+#' interact with topographical factors.
 
 # skip the final x-y stuff
 #plot(e[1:5],rug=FALSE,multiline=TRUE,ci.style="band")

@@ -4,3 +4,5 @@ music.csv
 .RData
 .Rhistory
 *.html
+covariate_cache/
+covariate_files/
