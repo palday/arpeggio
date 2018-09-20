@@ -26,7 +26,6 @@ library("car")
 library("effects")
 library("caret")
 library("lattice")
-library("corrplot")
 options(contrasts = c("contr.Sum","contr.Poly"))
 
 #' columns in this data file
@@ -98,13 +97,13 @@ dat <- dat %>%
 
 #' We also scaled the covariates. This helps the numerical aspects and also
 #' makes it easier to compare the relative weighting of the covariates.
-dat.scaled <- dat %>%
+dat <- dat %>%
               mutate_at(vars(cloze:plaus_eval), scale)
 
 #' I'm not sure we should model both sentt_semdist and pt_semdist. They're
 #' closey related conceptually and strongly correlated numerically.
 
-cor.test(dat.scaled$sentt_semdist,dat.scaled$pt_semdist)
+cor.test(dat$sentt_semdist,dat$pt_semdist)
 
 #' So I'll leave one out (if you have theoretical reasons to prefer one to the
 #' other, feel free to change), which should also speed up model fitting!
@@ -115,7 +114,7 @@ cor.test(dat.scaled$sentt_semdist,dat.scaled$pt_semdist)
 #' combinations of the other columns.
 
 
-X <- model.matrix(~ BS + condition * x * y * (cloze  + wordfrq + phon_nd + sentt_semdist + pt_semdist + concreteness + rhyme_eval + plaus_eval),data=dat.scaled)
+X <- model.matrix(~ BS + condition * x * y * (cloze  + wordfrq + phon_nd + sentt_semdist + pt_semdist + concreteness + rhyme_eval + plaus_eval),data=dat)
 lcs <- findLinearCombos(X)
 colnames(X)[lcs$remove]
 
@@ -169,7 +168,7 @@ system.time(m <- lmer(scale(N4) ~ scale(BS) * condition * x * y * z +
                               condition * (wordfrq + phon_nd + pt_semdist + concreteness + plaus_eval) +
             (1 + condition | subject_id) +
             (1 + condition | trlnumber),
-          data=dat.scaled,
+          data=dat,
           control=bobyqa,
           REML=FALSE))
 
