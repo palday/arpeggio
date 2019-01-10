@@ -58,7 +58,7 @@ dat <- read_csv("mlm_inputFM_prepro.csv") %>%
   # make subject and condition into categorical variables
   mutate(subject_id = factor(subject_id),
          # you can insert more meaningful labels for the conditions here
-         condition = factor(condition, levels=c(1,2,3), labels=c("A","B","C")))
+         condition = factor(condition, levels=c(1,2,3), labels=c("congruent","intermediate","incongruent")))
 
 #' Load and convert channel coordinates from spherical to cartesian. For
 #' formulae, see:
@@ -263,9 +263,9 @@ gg %+% subset(ci.gg, as.logical(str_detect(coef,"x"))) + ggtitle("Lateral Effect
 gg %+% subset(ci.gg, as.logical(str_detect(coef,"y"))) + ggtitle("Saggital Effects")
 
 
-#' We use [`eegUtils``](https://github.com/craddm/eegUtils/) for the topoplot.
+#' We use [`eegUtils`](https://github.com/craddm/eegUtils/) for the topoplot.
 #' If you have `devtools`` installed, then install using
-#' `devtools::install_github(craddm/eegUtils)`.
+#' `devtools::install_github("craddm/eegUtils")`.
 #'
 #' First, we do the equivalent of grand-average plots in the critical time
 #' window.
