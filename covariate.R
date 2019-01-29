@@ -243,7 +243,14 @@ pprint(a[!str_detect(rownames(a),"BS"),], type="html")
 
 # Wald is the fastest method; boot the most accurate and slowest, profile is a
 # the middle road
+#+ cicalc, cache=TRUE
+
 ci <- confint(m,method="Wald")
+
+# If doing profile CIs, then it's worthwhile to use profile() explicitly and
+# change some options
+
+#system.time(ci <- profile(m,optimizer="nloptwrap",parallel="multicore",ncpus=2))
 
 #+ coefplot, cache=TRUE, fig.width=7, fig.height=5
 ci.gg <- ci %>%
