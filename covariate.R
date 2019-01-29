@@ -28,6 +28,7 @@ library("caret")
 library("lattice")
 library("R.matlab")
 library("eegUtils") # from https://github.com/craddm/eegUtils/
+library("knitr")
 library("lmerOut")  # from https://bitbucket.org/palday/lmerout/
 options(contrasts = c("contr.Sum","contr.Poly"))
 
@@ -98,6 +99,8 @@ channel_locations <- channel_locations %>%
 #' to figure out the formulae for this and always messed it up, so we'll just
 #' "steal" [the data from
 #' FieldTrip](https://github.com/fieldtrip/fieldtrip/blob/master/template/layout/mpi_customized_acticap64.mat).
+#'
+
 pos <- readMat("mpi_customized_acticap64.mat")$lay[,,1]$pos
 channel_plot_locations <- data.frame(x=pos[,1],y=pos[,2])[1:60,] %>%
   as_tibble() %>%
@@ -199,15 +202,14 @@ system.time(m <- lmer(scale(N4) ~ scale(BS) * condition * x * y * z +
 #' and more t than normal, but there's nothing to be done for that now and it
 #' doesn't actually impace the inferences we really care about that much.
 
-#+ output, cache=TRUE
+#+ output, cache=TRUE, results='asis'
 
-pprint(summary(m), type="html")
+cat(pprint(summary(m), type="html"))
 # print(summary(m),correlation=FALSE,symbolic.cor=TRUE)
 
 cat(sprintf("Number of fixed-effect correlations > 0.1: %d",sum(as.matrix(vcov(m)) > 0.1)))
 
-
-
+#+ diagnostics, cache=TRUE, fig.width=10, fig.height=10
 plot(m)
 
 qqmath(m)
@@ -216,7 +218,6 @@ qqmath(ranef(m,condVar=TRUE))
 
 dotplot(ranef(m,condVar=TRUE))
 
-#+ diagnostics, cache=TRUE, fig.width=10, fig.height=10
 fortify.merMod(m, drop_na(dat)) %>%
   ggplot(aes(.fitted,.resid)) +
     geom_point(aes(color=condition),alpha=0.3) +
@@ -237,7 +238,8 @@ fortify.merMod(m, drop_na(dat)) %>%
 
 # a[!str_detect(rownames(a),"BS"),]
 
-pprint(a[!str_detect(rownames(a),"BS"),], type="html")
+#+ anova_output, results='asis'
+kable(a[!str_detect(rownames(a),"BS"),])
 
 #' The above summary can also be expressed graphically.
 
@@ -301,16 +303,16 @@ dat.plot <- dat.plot %>%
   mutate(x = 0.5 * x/max(abs(x)),
          y = 0.5 * y/max(abs(y)))
 
-dat.plot %>% subset(condition == "A") %>% topoplot(chan_marker="name")
+dat.plot %>% subset(condition == "congruent") %>% topoplot(chan_marker="name")
 
-dat.plot %>% subset(condition == "B") %>% topoplot()
+dat.plot %>% subset(condition == "intermediate") %>% topoplot()
 
-dat.plot %>% subset(condition == "C") %>% topoplot()
+dat.plot %>% subset(condition == "incongruent") %>% topoplot()
 
 #' We can also do difference waves:
 
 dat.plot %>% spread(condition,amplitude) %>%
-  select(-B) %>% mutate(amplitude = A - C) %>%
+  select(-intermediate) %>% mutate(amplitude = incongruent - congruent) %>%
   topoplot()
 
 #' We can check that out model make the right predictions. We skip the baseline
@@ -331,8 +333,8 @@ drop_na(dat) %>% mutate(N4 = scale(N4)) %>%
          y = y-mean(y)) %>%
   mutate(x = 0.5 * x/max(abs(x)),
          y = 0.5 * y/max(abs(y))) %>%
-  subset(condition == "A") %>%
-  topoplot(method="gam")+ ggtitle("Condition A: Observed Values")
+  subset(condition == "congruent") %>%
+  topoplot(method="gam")+ ggtitle("congruent: Observed Values")
 
 drop_na(dat) %>% mutate(fitted=fitted(m)) %>%
   group_by(chan, condition, subject_id) %>%
@@ -347,8 +349,8 @@ drop_na(dat) %>% mutate(fitted=fitted(m)) %>%
          y = y-mean(y)) %>%
   mutate(x = 0.5 * x/max(abs(x)),
          y = 0.5 * y/max(abs(y))) %>%
-  subset(condition == "A") %>%
-  topoplot(method="gam") + ggtitle("Condition A: Fitted Values")
+  subset(condition == "congruent") %>%
+  topoplot(method="gam") + ggtitle("congruent: Fitted Values")
 
 drop_na(dat) %>% mutate(residuals=residuals(m)) %>%
   group_by(chan, condition, subject_id) %>%
@@ -363,8 +365,8 @@ drop_na(dat) %>% mutate(residuals=residuals(m)) %>%
          y = y-mean(y)) %>%
   mutate(x = 0.5 * x/max(abs(x)),
          y = 0.5 * y/max(abs(y))) %>%
-  subset(condition == "A") %>%
-  topoplot(method="gam") + ggtitle("Condition A: Residual Values")
+  subset(condition == "congruent") %>%
+  topoplot(method="gam") + ggtitle("congruent: Residual Values")
 
 #' Hmmm, the topographical fits aren't perfect, but they're okay. Remember that
 #' all of this is on the standard deviation / unit scale and not the original
