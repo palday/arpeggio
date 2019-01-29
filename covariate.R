@@ -28,6 +28,7 @@ library("caret")
 library("lattice")
 library("R.matlab")
 library("eegUtils") # from https://github.com/craddm/eegUtils/
+library("lmerOut")  # from https://bitbucket.org/palday/lmerout/
 options(contrasts = c("contr.Sum","contr.Poly"))
 
 #' columns in this data file
@@ -63,8 +64,8 @@ dat <- read_csv("mlm_inputFM_prepro.csv") %>%
 #' Load and convert channel coordinates from spherical to cartesian. For
 #' formulae, see:
 #'
-#' - [1] https://sccn.ucsd.edu/pipermail/eeglablist/2006/001655.html - [2]
-#' https://github.com/mne-tools/mne-python/blob/master/mne/transforms.py#L694-L703
+#' - [1] https://sccn.ucsd.edu/pipermail/eeglablist/2006/001655.html
+#' - [2] https://github.com/mne-tools/mne-python/blob/master/mne/transforms.py#L694-L703
 #'
 #' At some point, I acquired this coordinates file -- I think I got it from
 #' EasyCap, the manufacturer.
@@ -120,7 +121,7 @@ dat <- dat %>%
 #' We also scaled the covariates. This helps the numerical aspects and also
 #' makes it easier to compare the relative weighting of the covariates.
 dat <- dat %>%
-              mutate_at(vars(cloze:plaus_eval), scale)
+  mutate_at(vars(cloze:plaus_eval), scale)
 
 #' I'm not sure we should model both sentt_semdist and pt_semdist. They're
 #' closey related conceptually and strongly correlated numerically.
@@ -134,7 +135,6 @@ cor.test(dat$sentt_semdist,dat$pt_semdist)
 #' I was getting some interesting warnings about rank deficiency, which often
 #' happens when certain combinations don't exist / can be expressed as
 #' combinations of the other columns.
-
 
 X <- model.matrix(~ BS + condition * x * y * (cloze  + wordfrq + phon_nd + sentt_semdist + pt_semdist + concreteness + rhyme_eval + plaus_eval),data=dat)
 lcs <- findLinearCombos(X)
@@ -200,9 +200,13 @@ system.time(m <- lmer(scale(N4) ~ scale(BS) * condition * x * y * z +
 #' doesn't actually impace the inferences we really care about that much.
 
 #+ output, cache=TRUE
-print(summary(m),correlation=FALSE,symbolic.cor=TRUE)
 
-sprintf("Number of fixed-effect correlations > 0.1: %d",sum(as.matrix(vcov(m)) > 0.1))
+pprint(summary(m), type="html")
+# print(summary(m),correlation=FALSE,symbolic.cor=TRUE)
+
+cat(sprintf("Number of fixed-effect correlations > 0.1: %d",sum(as.matrix(vcov(m)) > 0.1)))
+
+
 
 plot(m)
 
@@ -231,7 +235,9 @@ fortify.merMod(m, drop_na(dat)) %>%
 #' For the ANOVA-style display, we can also omit the baseline interval because
 #' we don't actually care about it, even if we have to model it.
 
-a[!str_detect(rownames(a),"BS"),]
+# a[!str_detect(rownames(a),"BS"),]
+
+pprint(a[!str_detect(rownames(a),"BS"),], type="html")
 
 #' The above summary can also be expressed graphically.
 
