@@ -1,10 +1,10 @@
 #' ---
 #' title: Statistical Analysis with Covariates for Musical Prediction Study
 #' author: Phillip M. Alday
-#' date: September 2018
+#' date: January 2019
 #' ---
 
-# Copyright 2018, Phillip Alday
+# Copyright 2018-2019, Phillip Alday
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
