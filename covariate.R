@@ -423,6 +423,7 @@ edf %>% bind_rows() %>% as_tibble() %>%
   # get into long format so that we can treat each covariate as a facet/panel
   gather(key="covariate",value="val",
          -effect, -condition, -fit, -se, -lower, -upper) %>%
+  mutate(condition=factor(condition,levels=c("congruent","intermediate","incongruent"))) %>%
   ggplot(aes(x=val,y=fit,ymin=lower,ymax=upper,color=condition,fill=condition)) +
   geom_line() +
   # we don't want the out edges of the ribbons marked
@@ -434,6 +435,8 @@ edf %>% bind_rows() %>% as_tibble() %>%
   theme_light() +
   scale_y_reverse() + # plot negativity upward (not unusual in ERP)
                       # but also "up" is now a bigger N400 effect
+  scale_color_manual(values=c("black","blue1","firebrick1"),
+                     aesthetics=c("color","fill")) +
   labs(x="Standardized Units",
        y="Amplitude (standard deviations, inverse scale)",
        title="Effects as modelled",
