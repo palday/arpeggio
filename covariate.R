@@ -29,6 +29,7 @@ library("lattice")
 library("R.matlab")
 library("eegUtils") # from https://github.com/craddm/eegUtils/
 library("knitr")
+library("MASS") # for contr.sdiff
 library("lmerOut")  # from https://bitbucket.org/palday/lmerout/
 options(contrasts = c("contr.Sum","contr.Poly"))
 
@@ -59,8 +60,18 @@ dat <- read_csv("mlm_inputFM_prepro.csv") %>%
   spread(., win, amplitude) %>%
   # make subject and condition into categorical variables
   mutate(subject_id = factor(subject_id),
-         # you can insert more meaningful labels for the conditions here
-         condition = factor(condition, levels=c(1,2,3), labels=c("congruent","intermediate","incongruent")))
+         condition = factor(condition, levels=c(1,2,3), labels=c("congruent","intermediate","incongruent"))
+         #condition = relevel(condition, "incongruent")
+         )
+
+contrasts(dat$condition)
+sdiff <- contr.sdif(3)
+
+colnames(sdiff) <- c(paste0("[",rownames(contrasts(dat$condition))[2]," > ",rownames(contrasts(dat$condition))[1],"]"),
+                     paste0("[",rownames(contrasts(dat$condition))[3]," > ",rownames(contrasts(dat$condition))[2],"]"))
+
+contrasts(dat$condition) <- sdiff
+contrasts(dat$condition)
 
 #' Load and convert channel coordinates from spherical to cartesian. For
 #' formulae, see:
@@ -312,7 +323,8 @@ dat.plot %>% subset(condition == "incongruent") %>% topoplot()
 #' We can also do difference waves:
 
 dat.plot %>% spread(condition,amplitude) %>%
-  select(-intermediate) %>% mutate(amplitude = incongruent - congruent) %>%
+  # need to specify dplyr:: because MASS also has a select
+  dplyr::select(-intermediate) %>% mutate(amplitude = incongruent - congruent) %>%
   topoplot()
 
 #' We can check that out model make the right predictions. We skip the baseline
