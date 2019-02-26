@@ -1,5 +1,5 @@
 #' ---
-#' title: Statistical Analysis with Covariates for Musical Prediction Study
+#' title: Statistical Analysis with Covariates for Rhyme Prediction Study
 #' author: Phillip M. Alday
 #' date: January 2019
 #' ---
@@ -108,7 +108,7 @@ channel_locations <- channel_locations %>%
 
 #' For display purposes, we also need the projection into the 2D plane. I tried
 #' to figure out the formulae for this and always messed it up, so we'll just
-#' "steal" [the data from
+#' borrow [the data from
 #' FieldTrip](https://github.com/fieldtrip/fieldtrip/blob/master/template/layout/mpi_customized_acticap64.mat).
 #'
 
@@ -124,38 +124,22 @@ dat <- dat %>%
   mutate(chan=substring(chan,2)) %>%
   left_join(channel_locations)
 
-#' Item number is labeled `trlnumber` here. Items aren't the same as trials --
-#' the same items can be presented in different orders, and it's not clear if
-#' trlnumber here refers to the sequence number or the particular lexical item.
-#' Items should definitely be included in the random effects the same way
-#' subjects are. Although given the number of controls implemented in the
-#' covariates, you should be able to get away with (1|item) instead of
-#' (1+condition|item).
+#' Item number is labeled `trlnumber` here. Items are included in the random
+#' effects the same way subjects are, i.e  with by-condition slopes. Although
+#' given the number of controls implemented in the covariates, you should be
+#' able to get away with `(1|item)` instead of `(1+condition|item)`.
 #'
 #' We also scaled the covariates. This helps the numerical aspects and also
 #' makes it easier to compare the relative weighting of the covariates.
 dat <- dat %>%
   mutate_at(vars(cloze:plaus_eval), scale)
 
-#' I'm not sure we should model both sentt_semdist and pt_semdist. They're
-#' closey related conceptually and strongly correlated numerically.
+#' We shouldn't model both sentt_semdist and pt_semdist. They're closey related
+#' conceptually and strongly correlated numerically.
 
 cor.test(dat$sentt_semdist,dat$pt_semdist)
 
-#' So I'll leave one out (if you have theoretical reasons to prefer one to the
-#' other, feel free to change), which should also speed up model fitting!
-
-
-#' I was getting some interesting warnings about rank deficiency, which often
-#' happens when certain combinations don't exist / can be expressed as
-#' combinations of the other columns.
-
-X <- model.matrix(~ BS + condition * x * y * (cloze  + wordfrq + phon_nd + sentt_semdist + pt_semdist + concreteness + rhyme_eval + plaus_eval),data=dat)
-lcs <- findLinearCombos(X)
-colnames(X)[lcs$remove]
-
-#' Something weird is going on with condition B and the cloze probability
-#' manipulation. Is your manipulation purely cloze probability?
+#' So  we omit sentt_semdist.
 #'
 #' Note also that there a bunch of NAs for cloze probability:
 
@@ -163,24 +147,27 @@ dat %>% group_by(condition) %>%
   summarize(mean=mean(cloze,na.rm=TRUE),
             sd=sd(cloze,na.rm=TRUE),
             NAs=sum(is.na(cloze)))
-#' All rows containing NAs in a predictor are dropped from the model. So maybe
-#' the better thing to do is omit cloze probability.
-#'
-#' Also, I think rhyme_eval is also an overspecification -- aren't the different
-#' conditions about different rhymes?
-#'
-#' If so, then you could model rhyme_eval *instead of* condition. The
-#' random-effects by item actually cover a lot of this type of small difference.
-#' This is why there's a huge literature on how important item-level random
-#' effects are in language research!
 
-#' I've also added in the third topographical predictor (z). This is a great
-#' example of issues in model fitting -- the simpler model without z didn't
-#' coverge, but the more complex one did.
+#' All rows containing NAs in a predictor are dropped from the model. If
+#' desired, you could replace these NAs with zeros and model cloze probability
+#' as a continuous variable instead of as a categorical condition. Because
+#' completions with very high (i.e. "certain") and very low (i.e. "impossible")
+#' cloze probability elicit qualitatively different responses than middle cloze
+#' probabilities, using a smoother within a GAMM would probably be the way to
+#' go.
 #'
-#' I've also removed the interactions between topography and covariates: they
-#' drastically increase fitting time, don't really improve fit, and greatly
-#' increase model complexity, so out they go!
+#' Similarly, rhyme_eval is strongly collinear with condition and cannot be
+#' included in the model. This is another place where an alternative analysis
+#' could use a continuous predictor instead of the categorical manipulation.
+#'
+#' I've added in the third topographical predictor (z) -- the scalp is a 2D
+#' surface, but embedded in 3D space. This is a great example of issues in model
+#' fitting -- the simpler model without z didn't coverge, but the more complex
+#' one did.
+#'
+#' The interactions between topography and covariates were removed for
+#' parsimony: they drastically increase fitting time, don't really improve fit,
+#' and greatly increase model complexity, so out they go!
 #'
 #' This gives us the power to try testing out interactions between condition,
 #' topography and the baseline interval. Adding in those interactions improves
@@ -208,10 +195,10 @@ system.time(m <- lmer(scale(N4) ~ scale(BS) * condition * x * y * z +
           control=bobyqa,
           REML=FALSE))
 
-#' If you don't understand some of the plots here, don't worry. The diagnostics
-#' look fine overall. It looks like our residual distribution is heavy tailed
-#' and more t than normal, but there's nothing to be done for that now and it
-#' doesn't actually impace the inferences we really care about that much.
+#' The diagnostics look fine overall. It looks like our residual distribution is
+#' heavy tailed and more t than normal, but there's nothing to be done for that
+#' now and it doesn't actually impact the inferences we really care about that
+#' much.
 
 #+ output, cache=TRUE, results='asis'
 
@@ -246,8 +233,6 @@ fortify.merMod(m, drop_na(dat)) %>%
 
 #' For the ANOVA-style display, we can also omit the baseline interval because
 #' we don't actually care about it, even if we have to model it.
-
-# a[!str_detect(rownames(a),"BS"),]
 
 #+ anova_output, results='asis'
 kable(a[!str_detect(rownames(a),"BS"),])
@@ -380,7 +365,7 @@ drop_na(dat) %>% mutate(residuals=residuals(m)) %>%
   subset(condition == "congruent") %>%
   topoplot(method="gam") + ggtitle("congruent: Residual Values")
 
-#' Hmmm, the topographical fits aren't perfect, but they're okay. Remember that
+#' The topographical fits aren't perfect, but they're okay. Remember that
 #' all of this is on the standard deviation / unit scale and not the original
 #' scale.
 
@@ -454,10 +439,10 @@ g.eff.scaled +
 #' Overall, this looks good. We see that the different covariates have some
 #' moderating influence on the effect of condition, but none really change the
 #' overall structure, as the lines are largely parallel-ish and the overall
-#' (vertical) order of the effects doesn't change  (within the uncertainty given by the
-#' confidence intervals)
+#' (vertical) order of the effects doesn't change  (within the uncertainty given
+#' by the confidence intervals).
 
-#' Note wordfrq looks to have different scale, even on the standardized scale.
+#' Note wordfrq looks to have a different scale, even on the standardized scale.
 #' This because of a long right tail: you have a few very high frequency
 #' words, while the majority are all about the same frequency.
 
